@@ -1,180 +1,112 @@
 # Deployment Guide
 
-## Quick Deploy Commands
+This project deploys as two services:
 
-### 1. Push to GitHub
+| Part | Host | Config |
+|------|------|--------|
+| React frontend (Vite) | Vercel | `frontend/vercel.json` |
+| FastAPI backend | Render | `render.yaml` |
+
+The frontend reads the backend URL from `VITE_API_URL` at build time, so set it
+**before** the production build.
+
+---
+
+## 1. Push to GitHub
+
 ```bash
-cd C:\Users\Rihaan\adaptive-learning
-git init
+cd adaptive-learning
 git add .
-git commit -m "Adaptive Learning Platform - Hackathon MVP"
-# Create repo at https://github.com/new first, then:
-git remote add origin https://github.com/YOUR_USERNAME/adaptive-learning.git
-git branch -M main
-git push -u origin main
+git commit -m "Update deployment config"
+git push origin main
 ```
 
-### 2. Deploy Backend to Railway (Recommended)
-```bash
-npm install -g @railway/cli
-cd C:\Users\Rihaan\adaptive-learning\backend
-railway login
-railway init
-railway up
-```
-**Save the Railway URL** (e.g., `https://adaptive-learning-backend.up.railway.app`)
-
-### 3. Deploy Frontend to Vercel
-```bash
-cd C:\Users\Rihaan\adaptive-learning\frontend
-npm install -g vercel
-vercel
-```
-When prompted:
-- Set up and deploy? **Yes**
-- Scope: **Your account**
-- Link to existing project? **No**
-- Project name: `adaptive-learning`
-- Directory: `./`
-- Override settings? **No**
-
-### 4. Add Backend URL to Vercel
-1. Go to Vercel Dashboard → Your Project → Settings → Environment Variables
-2. Add:
-   - **Name:** `VITE_API_URL`
-   - **Value:** `https://YOUR-RAILWAY-URL.up.railway.app`
-   - **Environments:** Production, Preview, Development
-3. Click **Save**
-
-### 5. Redeploy Frontend
-```bash
-cd C:\Users\Rihaan\adaptive-learning\frontend
-vercel --prod
-```
+Repository: https://github.com/rihaanps-hash/adaptive-learning
 
 ---
 
-## Alternative Backend Hosting Options
+## 2. Deploy the backend (Render)
 
-### Render (Free Tier)
-1. Go to https://render.com → New Web Service
-2. Connect GitHub repo
-3. Root directory: `backend`
-4. Build: `pip install -r requirements.txt`
-5. Start: `python -m app.main`
-6. Add env var: `PORT=8000`
+1. Open https://dashboard.render.com/blueprints
+2. **New Blueprint Instance** → connect the GitHub repo
+3. Apply the blueprint. Render reads `render.yaml` and creates:
+   - Service: `adaptive-learning-api`
+   - Root directory: `backend`
+   - Build: `pip install -r requirements.txt`
+   - Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+4. Wait for the service to go live, then note its URL, e.g.
+   `https://adaptive-learning-api.onrender.com`
 
-### Fly.io
-```bash
-cd C:\Users\Rihaan\adaptive-learning\backend
-fly launch
-fly deploy
-```
-
-### PythonAnywhere (Free Tier)
-1. Create account at pythonanywhere.com
-2. Upload backend folder
-3. Create virtualenv, install requirements
-4. Configure Web App (manual config)
-
----
-
-## Environment Variables
-
-### Backend (.env)
-```env
-# Optional - for production
-CORS_ORIGINS=https://your-vercel-app.vercel.app
-```
-
-### Frontend (Vercel Dashboard)
-| Name | Value | Environments |
-|------|-------|--------------|
-| `VITE_API_URL` | `https://your-backend.railway.app` | Production, Preview, Development |
-
----
-
-## Verify Deployment
-
-1. **Frontend:** https://your-app.vercel.app
-2. **Backend Health:** https://your-backend.railway.app/api/health
-3. **API Docs:** https://your-backend.railway.app/docs
-
----
-
-## Troubleshooting
-
-### CORS Errors
-Add your Vercel URL to backend CORS:
-```python
-# In backend/app/main.py
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://your-app.vercel.app", "http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-```
-
-### API Not Found
-- Check `VITE_API_URL` is set correctly in Vercel
-- Redeploy frontend after adding env var: `vercel --prod`
-
-### Build Fails
-- Ensure all imports use the new `api` utility
-- Run `npm run build` locally first
-
----
-
-## Local Development After Deployment
+Verify:
 
 ```bash
-# Terminal 1 - Backend
-cd backend
-.\venv\Scripts\activate
-python -m app.main
+curl https://YOUR-SERVICE.onrender.com/api/health
+```
 
-# Terminal 2 - Frontend
+CORS already allows `http://localhost:3000`, `http://localhost:5173`, and every
+`https://*.vercel.app` origin. To allow a custom domain, set `CORS_ORIGINS` on
+the Render service to a comma-separated list of origins.
+
+> Render's free plan sleeps after inactivity, so the first request may take
+> 30–60 seconds.
+
+---
+
+## 3. Deploy the frontend (Vercel)
+
+```bash
 cd frontend
-npm run dev
+npx vercel login
+npx vercel link --project adaptive-learning
+npx vercel env add VITE_API_URL production
+# paste https://YOUR-SERVICE.onrender.com when prompted
+npx vercel --prod
 ```
 
-Frontend: http://localhost:3000 (proxies to localhost:8000)
-Production: Uses `VITE_API_URL` from environment
+Repeat `vercel env add VITE_API_URL preview` if you want preview deployments to
+use the hosted API.
+
+`frontend/vercel.json` rewrites all routes to `index.html` so React Router deep
+links work.
 
 ---
 
-## File Structure for Deployment
+## Environment variables
 
-```
-adaptive-learning/
-├── backend/
-│   ├── app/main.py          # FastAPI app
-│   ├── requirements.txt     # Python deps
-│   └── venv/                # Local only
-├── frontend/
-│   ├── src/
-│   │   ├── lib/api.js       # API utility (uses VITE_API_URL)
-│   │   ├── pages/*.jsx      # All pages use api utility
-│   │   └── context/*.jsx    # Context uses api utility
-│   ├── vite.config.js       # Uses VITE_API_URL
-│   ├── package.json
-│   └── dist/                # Build output (auto-generated)
-├── .gitignore
-└── README.md
-```
+| Where | Name | Value |
+|-------|------|-------|
+| Vercel (build) | `VITE_API_URL` | `https://YOUR-SERVICE.onrender.com` |
+| Render (runtime) | `CORS_ORIGINS` | optional custom origins, comma-separated |
+| Render (runtime) | `PORT` | set automatically by Render |
 
 ---
 
-## One-Command Deploy Script (Optional)
+## Verify the deployment
 
-Create `deploy.sh`:
+1. Frontend: `https://your-app.vercel.app`
+2. Backend health: `https://YOUR-SERVICE.onrender.com/api/health`
+3. API docs: `https://YOUR-SERVICE.onrender.com/docs`
+
+---
+
+## Local development
+
 ```bash
-#!/bin/bash
-# Deploy to Railway + Vercel
-cd backend && railway up
-cd ../frontend && vercel --prod
+# Terminal 1 - backend
+cd backend
+venv\Scripts\activate        # Windows
+python -m uvicorn app.main:app --reload --port 8000
+
+# Terminal 2 - frontend
+cd frontend
+npm install
+npm run dev                  # http://localhost:3000, proxies /api to :8000
 ```
 
-Run: `chmod +x deploy.sh && ./deploy.sh`
+Production build:
+
+```bash
+cd frontend
+npm run build
+npm run preview              # http://localhost:4173
+```
