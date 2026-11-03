@@ -226,7 +226,3 @@ vercel --prod
 ```
 
 See [DEPLOY.md](DEPLOY.md) for detailed instructions and alternative hosting options.
-
-## License
-
-MIT License - Hackathon MVP
