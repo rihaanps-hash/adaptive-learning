@@ -1,91 +1,71 @@
 # Deployment Guide
 
-This project deploys as two services:
+The app is deployed entirely on Vercel:
 
-| Part | Host | Config |
-|------|------|--------|
-| React frontend (Vite) | Vercel | `frontend/vercel.json` |
-| FastAPI backend | Render | `render.yaml` |
+| Part | Project | Root directory | URL |
+|------|---------|----------------|-----|
+| React frontend (Vite) | `adaptive-learning` | `frontend/` | https://adaptive-learning-ten-beta.vercel.app |
+| FastAPI backend | `adaptive-learning-api` | `backend/` | https://adaptive-learning-api.vercel.app |
 
-The frontend reads the backend URL from `VITE_API_URL` at build time, so set it
-**before** the production build.
+The frontend reads `VITE_API_URL` at build time; it is set to the backend URL in
+the Vercel project settings for Production, Preview, and Development.
 
 ---
 
-## 1. Push to GitHub
+## Deploy with the Vercel CLI
+
+### Backend
+
+Vercel detects FastAPI from `backend/requirements.txt` and loads the top-level
+`app` from `backend/main.py`, which re-exports the app from `backend/app/main.py`.
+Every request is routed to that ASGI app.
 
 ```bash
-cd adaptive-learning
-git add .
-git commit -m "Update deployment config"
-git push origin main
+cd backend
+npx vercel link --project adaptive-learning-api
+npx vercel deploy --prod
 ```
 
-Repository: https://github.com/rihaanps-hash/adaptive-learning
-
----
-
-## 2. Deploy the backend (Render)
-
-1. Open https://dashboard.render.com/blueprints
-2. **New Blueprint Instance** → connect the GitHub repo
-3. Apply the blueprint. Render reads `render.yaml` and creates:
-   - Service: `adaptive-learning-api`
-   - Root directory: `backend`
-   - Build: `pip install -r requirements.txt`
-   - Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-4. Wait for the service to go live, then note its URL, e.g.
-   `https://adaptive-learning-api.onrender.com`
-
-Verify:
-
-```bash
-curl https://YOUR-SERVICE.onrender.com/api/health
-```
-
-CORS already allows `http://localhost:3000`, `http://localhost:5173`, and every
-`https://*.vercel.app` origin. To allow a custom domain, set `CORS_ORIGINS` on
-the Render service to a comma-separated list of origins.
-
-> Render's free plan sleeps after inactivity, so the first request may take
-> 30–60 seconds.
-
----
-
-## 3. Deploy the frontend (Vercel)
+### Frontend
 
 ```bash
 cd frontend
-npx vercel login
 npx vercel link --project adaptive-learning
-npx vercel env add VITE_API_URL production
-# paste https://YOUR-SERVICE.onrender.com when prompted
-npx vercel --prod
+npx vercel env add VITE_API_URL \
+  --value https://adaptive-learning-api.vercel.app \
+  -e production -e preview -e development -y
+npx vercel deploy --prod
 ```
 
-Repeat `vercel env add VITE_API_URL preview` if you want preview deployments to
-use the hosted API.
-
-`frontend/vercel.json` rewrites all routes to `index.html` so React Router deep
-links work.
+`frontend/vercel.json` rewrites unknown routes to `index.html` so React Router
+deep links work.
 
 ---
 
-## Environment variables
+## CORS
 
-| Where | Name | Value |
-|-------|------|-------|
-| Vercel (build) | `VITE_API_URL` | `https://YOUR-SERVICE.onrender.com` |
-| Render (runtime) | `CORS_ORIGINS` | optional custom origins, comma-separated |
-| Render (runtime) | `PORT` | set automatically by Render |
+The backend allows these origins by default:
+
+- `http://localhost:3000`, `http://localhost:5173`
+- Every `https://*.vercel.app` origin (including preview deployments)
+
+For a custom domain, set `CORS_ORIGINS` on the Render/Vercel service to a
+comma-separated list of origins.
 
 ---
 
-## Verify the deployment
+## Verify
 
-1. Frontend: `https://your-app.vercel.app`
-2. Backend health: `https://YOUR-SERVICE.onrender.com/api/health`
-3. API docs: `https://YOUR-SERVICE.onrender.com/docs`
+```bash
+curl https://adaptive-learning-api.vercel.app/api/health
+curl https://adaptive-learning-api.vercel.app/api/learners
+```
+
+API docs: https://adaptive-learning-api.vercel.app/docs
+
+> **Note:** the demo data lives in process memory. Serverless functions can
+> scale to multiple instances, so quiz/priority updates may not be visible
+> across every request. For a persistent demo, use a hosted database.
 
 ---
 
@@ -103,10 +83,23 @@ npm install
 npm run dev                  # http://localhost:3000, proxies /api to :8000
 ```
 
-Production build:
+Production preview locally:
 
 ```bash
 cd frontend
 npm run build
 npm run preview              # http://localhost:4173
 ```
+
+---
+
+## Optional: Render instead of Vercel for the backend
+
+`render.yaml` at the repo root defines a free Python web service:
+
+1. https://dashboard.render.com/blueprints → **New Blueprint Instance**
+2. Connect `rihaanps-hash/adaptive-learning` and apply
+3. Set `VITE_API_URL` in Vercel to the Render service URL and redeploy
+
+Render keeps a single long-running process, so demo state persists between
+requests (free instances sleep after inactivity).
